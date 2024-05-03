@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.7.4;
+pragma solidity ^0.8.13;
 
 interface IERC20 {
 	function totalSupply() external view returns (uint256);
@@ -24,12 +24,25 @@ contract TicketToken is IERC20 {
 	mapping(address => uint256) private _balances;
 	mapping(address => mapping(address => uint256)) private _allowances;
 
-	constructor(string memory _event_name, string memory _symbol, uint256 initialSupply) {
+	uint256 private _tokenPrice;
+	address private _event_owner;
+	uint private _event_datetime_unix;
+
+	constructor(
+		string memory _event_name,
+		string memory _symbol,
+		uint256 tokenPriceWEI,
+		uint256 initialSupply,
+		address event_owner,
+		uint event_datetime_unix
+	) {
 		event_name = _event_name;
 		symbol = _symbol;
 		_totalSupply = initialSupply;
-		_balances[msg.sender] = _totalSupply;
-		emit Transfer(address(0), msg.sender, _totalSupply);
+		_balances[address(this)] = _totalSupply;
+		_tokenPrice = tokenPriceWEI;
+		_event_owner = event_owner;
+		_event_datetime_unix = event_datetime_unix;
 	}
 
 	function totalSupply() external view override returns (uint256) {
@@ -61,6 +74,32 @@ contract TicketToken is IERC20 {
 	) external override returns (bool) {
 		_transfer(sender, recipient, amount);
 		_approve(sender, msg.sender, _allowances[sender][msg.sender] - amount);
+		return true;
+	}
+
+	function buy(uint256 _amount) external payable returns (bool) {
+		require(msg.value == _amount * _tokenPrice, 'Need to send exact amount of wei');
+		require(_balances[address(this)] >= _amount, 'Sorry - all sold out');
+
+		_transfer(address(this), msg.sender, _amount);
+
+		_balances[address(this)] -= _amount;
+
+		return true;
+	}
+
+	function sell(uint256 _amount) external returns (bool) {
+		require(_balances[msg.sender] >= _amount, "You don't have that many tickets!");
+		_balances[msg.sender] -= _amount;
+		_balances[address(this)] += _amount;
+		payable(msg.sender).transfer(_amount * _tokenPrice);
+		return true;
+	}
+
+	function withdraw() external returns (bool) {
+		require(block.timestamp > _event_datetime_unix, 'Cannot withdraw until after event');
+		require(msg.sender == _event_owner, 'Only owner can trigger withdrawal');
+		payable(_event_owner).transfer(address(this).balance);
 		return true;
 	}
 
